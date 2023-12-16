@@ -1,0 +1,103 @@
+import os
+import string
+from collections import defaultdict
+from typing import List
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+class PlagiarismCheckerGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Plagiarism Checker")
+        self.documents_folder = None
+
+        self.label = tk.Label(root, text="Select documents folder:")
+        self.label.pack()
+
+        self.folder_button = tk.Button(root, text="Select Folder", command=self.select_folder)
+        self.folder_button.pack()
+
+        self.check_button = tk.Button(root, text="Check Plagiarism", command=self.check_plagiarism)
+        self.check_button.pack()
+
+    def select_folder(self):
+        self.documents_folder = filedialog.askdirectory()
+        if self.documents_folder:
+            messagebox.showinfo("Folder Selected", f"Selected folder: {self.documents_folder}")
+
+    def preprocess_text(self, text: str) -> str:
+        text = text.lower()
+        text = text.translate(str.maketrans('', '', string.punctuation))
+        text = ' '.join(text.split())
+        return text
+
+    def calculate_hash(self, text: str, pattern_length: int) -> int:
+        hash_value = 0
+        prime = 101
+        for char in text[:pattern_length]:
+            hash_value = (hash_value * prime + ord(char)) % (prime * pattern_length)
+        return hash_value
+
+    def search(self, pattern: str, text: str) -> List[int]:
+        results = []
+        pattern_length = len(pattern)
+        text_length = len(text)
+
+        pattern_hash = self.calculate_hash(pattern, pattern_length)
+        text_hash = self.calculate_hash(text, pattern_length)
+
+        prime = 101
+        power = (prime ** (pattern_length - 1)) % (prime * pattern_length)
+
+        for i in range(text_length - pattern_length + 1):
+            if pattern_hash == text_hash and pattern == text[i:i+pattern_length]:
+                results.append(i)
+
+            if i < text_length - pattern_length:
+                text_hash = (prime * (text_hash - ord(text[i]) * power) + ord(text[i+pattern_length])) % (prime * pattern_length)
+
+                if text_hash < 0:
+                    text_hash += prime * pattern_length
+
+        return results
+
+    def check_plagiarism(self):
+        if self.documents_folder is None:
+            messagebox.showerror("Error", "Please select a documents folder.")
+            return
+
+        document_file = filedialog.askopenfilename(title="Select document to check", filetypes=(("Text files", "*.txt"),))
+        if not document_file:
+            return
+
+        with open(document_file, 'r') as file:
+            document_text = file.read()
+
+        document_text = self.preprocess_text(document_text)
+        plagiarism_scores = defaultdict(float)
+
+        for file_name in os.listdir(self.documents_folder):
+            file_path = os.path.join(self.documents_folder, file_name)
+            if os.path.isfile(file_path) and file_name.endswith('.txt') and file_name != os.path.basename(document_file):
+                with open(file_path, 'r') as file:
+                    text = file.read()
+                    text = self.preprocess_text(text)
+                    matches = self.search(document_text, text)
+                    similarity = sum(len(document_text[m:m + len(document_text)]) for m in matches) / len(document_text)
+                    if similarity >= 0.8:  # Customize the threshold as desired
+                        plagiarism_scores[file_name] = similarity
+
+        if not plagiarism_scores:
+            messagebox.showinfo("Result", "No plagiarism detected.")
+        else:
+            result_text = "Plagiarism detected:\n\n"
+            for file_name, similarity in plagiarism_scores.items():
+                result_text += f"Similarity with '{file_name}': {similarity * 100}%\n"
+
+            messagebox.showinfo("Result", result_text)
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    plagiarism_checker_gui = PlagiarismCheckerGUI(root)
+    root.mainloop()
